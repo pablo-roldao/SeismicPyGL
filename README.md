@@ -94,6 +94,5 @@ SeismicPyGL/
 │   ├── textures/                            # Texturas de concreto, grama e fumaça
 │   └── models/                              # Modelos 3D .obj
 ├── requirements.txt            # Dependências fixadas
-├── STATUS_ISSUES.md            # Auditoria de 22/22 requisitos concluídos
 └── README.md
 ```
