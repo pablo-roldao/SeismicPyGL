@@ -24,6 +24,11 @@ def _running_under_wsl() -> bool:
     return os.path.exists("/proc/sys/fs/binfmt_misc/WSLInterop")
 
 
+def _has_nvidia_gpu() -> bool:
+    """Indício leve (sem subprocesso) de que o driver proprietário NVIDIA está carregado."""
+    return sys.platform.startswith("linux") and os.path.exists("/proc/driver/nvidia/version")
+
+
 # No WSL a GPU dedicada só é acessível via tradução D3D12 do Mesa; em Linux
 # nativo esse hack é desnecessário (e pode até forçar um caminho pior que o
 # driver nativo/GLVND já escolheria sozinho), então só se aplica sob WSL.
@@ -36,20 +41,32 @@ if _running_under_wsl():
         os.environ["PYOPENGL_PLATFORM"] = "glx"
     if "/usr/lib/wsl/lib" not in os.environ.get("LD_LIBRARY_PATH", ""):
         os.environ["LD_LIBRARY_PATH"] = "/usr/lib/wsl/lib:" + os.environ.get("LD_LIBRARY_PATH", "")
-elif sys.platform.startswith("linux") and os.environ.get("SEISMICPYGL_FORCE_X11") == "1":
-    # Sob um compositor Wayland (comum em notebooks híbridos com Intel+NVIDIA),
-    # o SDL pode escolher o caminho EGL nativo do Wayland para criar o
-    # contexto OpenGL. Esse caminho não consulta a seleção de GPU do GLVND
-    # (ex.: __GLX_VENDOR_LIBRARY_NAME=nvidia, usada por PRIME render offload),
-    # então a GPU dedicada pode nunca ser realmente usada mesmo estando
-    # disponível — forçar XWayland/GLX faz o SDL respeitar essa seleção.
-    # Não é ativado por padrão: em ao menos um ambiente Wayland testado,
-    # forçar SDL_VIDEODRIVER=x11 quebrou a criação do contexto OpenGL. Use
-    # `SEISMICPYGL_FORCE_X11=1 python main.py` para testar manualmente se a
-    # sua GPU dedicada não está sendo usada (veja a linha "[Hardware 3D] GPU:"
-    # impressa no console ao iniciar).
-    if "SDL_VIDEODRIVER" not in os.environ:
-        os.environ["SDL_VIDEODRIVER"] = "x11"
+elif sys.platform.startswith("linux"):
+    if _has_nvidia_gpu():
+        # Sob um compositor Wayland (comum em notebooks híbridos com
+        # Intel+NVIDIA), o SDL costuma escolher o caminho EGL nativo do
+        # Wayland para criar o contexto OpenGL, que não consulta a seleção
+        # de GPU do GLVND (__GLX_VENDOR_LIBRARY_NAME) — a GPU dedicada pode
+        # nunca ser usada mesmo estando disponível e configurada. O PRIME
+        # render offload da própria NVIDIA resolve isso sem trocar de
+        # backend de janela (ao contrário do SEISMICPYGL_FORCE_X11 abaixo):
+        # verificado nesta máquina (Hyprland/Omarchy, Intel Alder Lake +
+        # RTX 3050) que "[Hardware 3D] GPU:" passa a mostrar a RTX 3050,
+        # de forma estável, mantendo o caminho Wayland/EGL nativo.
+        os.environ.setdefault("__NV_PRIME_RENDER_OFFLOAD", "1")
+        os.environ.setdefault("__GLX_VENDOR_LIBRARY_NAME", "nvidia")
+
+    if os.environ.get("SEISMICPYGL_FORCE_X11") == "1":
+        # Último recurso, caso o PRIME render offload acima não baste em
+        # alguma outra combinação de compositor/driver: força XWayland/GLX,
+        # que sempre respeita a seleção de GPU do GLVND. Não é ativado por
+        # padrão porque, em ao menos um ambiente Wayland testado, forçar
+        # SDL_VIDEODRIVER=x11 quebrou a criação do contexto OpenGL. Use
+        # `SEISMICPYGL_FORCE_X11=1 python main.py` para testar manualmente
+        # se a GPU dedicada ainda não está sendo usada (veja a linha
+        # "[Hardware 3D] GPU:" impressa no console ao iniciar).
+        if "SDL_VIDEODRIVER" not in os.environ:
+            os.environ["SDL_VIDEODRIVER"] = "x11"
 
 import pygame
 from pygame.locals import (
