@@ -1,7 +1,7 @@
 """
 Câmera livre 3D estilo primeira pessoa com suporte a:
 - Movimentação livre corrigida (WASD, Shift sprint, S navega para trás, A esquerda, D direita)
-- Rotação via mouse suave com interpolação exponencial (Euler angles: Pitch e Yaw)
+- Rotação via mouse (delta bruto com filtro anti-jitter, Euler angles: Pitch e Yaw)
 - Centralização inicial mirando no centro da vila (0, 0)
 - Zoom via FOV dinâmico (Mouse Wheel)
 - Sistema de Trauma & Screen Shake com Ruído de Perlin (Pitch, Yaw, Roll e Translação)
@@ -38,11 +38,6 @@ class FreeCamera:
         self.eye_height = 2.5
         self.world_bounds = 68.0
 
-        # Suavização (smoothing) do mouse para eliminar tremores de delta bruto
-        self._smooth_yaw_vel = 0.0
-        self._smooth_pitch_vel = 0.0
-        self.smooth_alpha = 0.40
-
         self.fov = fov               # campo de visão atual (graus)
         self.zoom_speed = zoom_speed
         self.fov_min = fov_min       # zoom in
@@ -72,8 +67,6 @@ class FreeCamera:
         self.trauma = 0.0
         self._shake_yaw = self._shake_pitch = self._shake_roll = 0.0
         self._shake_pos = (0.0, 0.0, 0.0)
-        self._smooth_yaw_vel = 0.0
-        self._smooth_pitch_vel = 0.0
 
     def add_trauma(self, amount: float):
         """Injeta trauma no intervalo [0.0, 1.0]."""
