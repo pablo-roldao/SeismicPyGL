@@ -27,11 +27,15 @@ Simulador 3D de terremotos de alto desempenho em Python com **Pygame + PyOpenGL*
 ## 🛠️ Tecnologias e Arquitetura
 
 - **Pipeline Programável Moderno (GLSL 3.3 Core):** Sem `glBegin/glEnd` ou matrizes de função fixa legadas.
-- **Deformação de Terreno na GPU (`ground.vert`):** A equação de onda radial senoidal e o recálculo analítico dos vetores normais são executados inteiramente nos núcleos da GPU.
-- **Screen Shake por Trauma (`camera.py` + `math_utils.py`):** Modelo de trauma $[0.0, 1.0]$ com queda cúbica ($Trauma^3$) e amostragem de Ruído de Perlin para dessincronizar Pitch, Yaw, Roll e Translação.
-- **Colapso Estrutural com Efeito Chicote (`scene.py`):** Edifícios fatiados que acumulam dano mecânico, sofrem inclinação progressiva e afundamento na base no eixo Y ($M = T \times R \times S$).
-- **Sistema de Partículas (`particles.py`):** Billboarding esférico extraído da View Matrix com textura em gradiente radial suave e `glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)`.
-- **HUD 2D Ortográfico (`hud.py`):** Exibe métricas em tempo real (Escala Richter, trauma da câmera, contador de prédios e FPS) com isolamento total do buffer de profundidade (`glDisable(GL_DEPTH_TEST)`).
+- **Deformação de Terreno na GPU (`assets/shaders/ground.vert`):** A equação de onda radial senoidal e o recálculo analítico dos vetores normais são executados inteiramente nos núcleos da GPU, sobre uma malha do chão indexada via EBO (vértices compartilhados entre células vizinhas, em vez de duplicados por triângulo).
+- **Screen Shake por Trauma (`src/core/camera.py` + `src/core/math_utils.py`):** Modelo de trauma $[0.0, 1.0]$ com queda cúbica ($Trauma^3$) e amostragem de Ruído de Perlin para dessincronizar Pitch, Yaw, Roll e Translação. A câmera também colide com prédios, casas, árvores, a montanha e postes de iluminação em pé — não atravessa mais a geometria do mundo.
+- **Colapso Estrutural com Efeito Chicote (`src/world/building.py`, `mountain.py`, `nature.py`, `light_pole.py`):** Edifícios fatiados que acumulam dano mecânico, sofrem inclinação progressiva e afundamento na base no eixo Y ($M = T \times R \times S$); árvores e postes caem fisicamente sob tremores fortes.
+- **Escombros Instanciados (`src/world/debris_renderer.py`):** Todos os pedaços de entulho de prédios e rochas da montanha são desenhados em 1-2 `glDrawArraysInstanced`, em vez de uma chamada de desenho por pedaço — essencial durante o colapso simultâneo de vários prédios.
+- **Sistema de Partículas Vetorizado (`src/simulation/particles.py`):** Armazenamento em arrays NumPy (Structure of Arrays) em vez de uma lista de objetos Python; `emit`/`update`/montagem do buffer de instância totalmente vetorizados.
+- **Shadow Mapping Direcional (`src/rendering/shadow_map.py`):** Passe de profundidade dedicado (framebuffer + textura de depth) antes do passe principal, com binds de textura/uniforms de material pulados nesse passe (não são lidos pelo shader de sombra).
+- **HUD 2D Ortográfico (`src/rendering/hud.py`):** Exibe métricas em tempo real (Escala Richter, trauma da câmera, contador de prédios/casas/postes e FPS) com isolamento total do buffer de profundidade (`glDisable(GL_DEPTH_TEST)`).
+- **Seleção Automática de GPU Dedicada:** Sob WSL, força o Mesa a usar a GPU via tradução D3D12; em Linux nativo com driver NVIDIA detectado (notebooks híbridos Intel+NVIDIA sob Wayland), ativa PRIME render offload por padrão — sem precisar de flags manuais na maioria dos casos.
+- **Suíte de Testes Automatizados (`tests/`, `pytest`):** Testes unitários para toda a lógica pura do projeto (física, geração procedural, matemática) e testes de fumaça com um contexto OpenGL real para as classes de renderização.
 
 ---
 
@@ -62,7 +66,11 @@ python tools/convert_exr_textures.py
 
 ### 4. Executar o simulador
 
-O jogo detecta e ativa automaticamente a placa de vídeo dedicada (NVIDIA RTX) no Linux/WSL:
+O jogo tenta usar a GPU dedicada automaticamente: sob WSL, força o Mesa a
+acessar a placa via tradução D3D12; em Linux nativo com driver NVIDIA
+detectado (ex.: notebooks híbridos Intel+NVIDIA sob Wayland), ativa PRIME
+render offload por padrão. Confira a linha `[Hardware 3D] GPU:` impressa no
+console ao iniciar para conferir qual GPU está sendo usada.
 
 ```bash
 python main.py
@@ -80,25 +88,36 @@ pytest tests/ -v
 
 ```
 SeismicPyGL/
-├── main.py                     # Loop de eventos, orquestração e render pass
-├── camera.py                   # FreeCamera com Euler angles + Trauma/Perlin Screen Shake
-├── math_utils.py               # Matrizes 4x4 (MVP), vetores e Perlin Noise 1D/2D puro
-├── shader.py                   # Gerenciador e compilador de Programas GLSL
-├── mesh.py                     # Gerenciador de VBO / VAO com dados entrelaçados
-├── obj_loader.py               # Leitor Wavefront .obj e geradores procedurais
-├── texture.py                  # Loader de texturas via PIL e geradores procedurais
-├── earthquake.py               # Física sísmica, propagação de ondas e parâmetros Richter
-├── scene.py                    # Entidades da cena: Ground, Building, Mountain, Tree
-├── particles.py                # Sistema de partículas com Billboards & Alpha Blending
-├── hud.py                      # Interface 2D com Pygame Font e projeção ortográfica
+├── main.py                      # Loop de eventos, orquestração e render pass (shadow + cena + HUD)
+├── src/
+│   ├── core/                    # Matemática 3D, câmera, shaders, malhas, texturas
+│   │   ├── camera.py            # FreeCamera: Euler angles, Trauma/Perlin Screen Shake, colisão com o mundo
+│   │   ├── math_utils.py        # Matrizes 4x4 (MVP) e Perlin Noise 1D/2D puro
+│   │   ├── mesh.py              # VAO/VBO/EBO com dados entrelaçados
+│   │   ├── obj_loader.py        # Leitor Wavefront .obj e geradores procedurais de malha
+│   │   ├── shader.py            # Compilador/gerenciador de Programas GLSL
+│   │   └── texture.py           # Loader PIL + fallback procedural (com aviso de textura ausente)
+│   ├── simulation/              # Física sísmica e partículas
+│   │   ├── earthquake.py        # Propagação de onda circular e parâmetros Richter
+│   │   └── particles.py         # ParticleSystem vetorizado (NumPy SoA) com Billboards
+│   ├── world/                   # Entidades da cena e geração procedural
+│   │   ├── building.py          # Colapso estrutural e escombros
+│   │   ├── ground.py            # Terreno deformável (malha indexada via EBO)
+│   │   ├── nature.py            # Árvores (queda física)
+│   │   ├── light_pole.py        # Postes de iluminação (queda física)
+│   │   ├── mountain.py          # Montanha procedural e queda de rochas
+│   │   ├── debris_renderer.py   # Escombros de prédios/montanha em 1-2 draw calls instanciados
+│   │   ├── village.py           # generate_village: prédios, casas, ruas e postes
+│   │   └── shared.py            # Malhas/materiais PBR compartilhados (cache)
+│   └── rendering/                # HUD, sombra e céu
+│       ├── hud.py
+│       ├── shadow_map.py         # Shadow mapping direcional (passe de profundidade)
+│       └── sky.py                # Céu HDRI panorâmico
+├── tests/                        # Suíte pytest: lógica pura + testes de fumaça com GL real
 ├── assets/
-│   ├── shaders/
-│   │   ├── scene.vert / scene.frag          # Iluminação Phong + Texturas
-│   │   ├── ground.vert / ground.frag        # Deformação da onda sísmica na GPU
-│   │   ├── billboard.vert / billboard.frag  # Partículas de fumaça e poeira
-│   │   └── hud.vert / hud.frag              # Projeção ortográfica 2D
-│   ├── textures/                            # Texturas de concreto, grama e fumaça
-│   └── models/                              # Modelos 3D .obj
-├── requirements.txt            # Dependências fixadas
+│   ├── shaders/                  # scene, ground, billboard, hud, shadow, sky, debris (.vert/.frag)
+│   ├── textures/                 # Pacotes PBR (albedo/normal/roughness) + fallback procedural
+│   └── models/                   # Modelos 3D .obj
+├── requirements.txt              # Dependências fixadas
 └── README.md
 ```
