@@ -360,10 +360,8 @@ def main():
     # Finalização e Limpeza de Memória GPU
     # -----------------------------------------------------------------------
     ground.cleanup()
-    # Limpeza dos prédios/casas, desnecessário para ruas
-    for b in all_buildings:
-        if hasattr(b, "cleanup"):
-            b.cleanup()
+    # Building não possui recursos GPU próprios (usa apenas meshes
+    # compartilhados via shared.py) — nada a limpar aqui.
     mountain.cleanup()
     particle_system.cleanup()
     debris_renderer.cleanup()
