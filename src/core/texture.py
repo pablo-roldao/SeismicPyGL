@@ -21,6 +21,19 @@ _loaded_textures = []
 _pbr_set_cache = {}
 _flat_normal_id = None
 _default_roughness_id = None
+_fallback_count = 0
+
+
+def get_fallback_count() -> int:
+    """Quantas vezes uma textura ausente/incompleta caiu para o fallback procedural."""
+    return _fallback_count
+
+
+def _warn_fallback(message: str):
+    """Avisa (em destaque, no console) que uma textura caiu para fallback procedural."""
+    global _fallback_count
+    _fallback_count += 1
+    print(f"\033[33m[Aviso]\033[0m {message}")
 
 
 def procedural_texture_size():
@@ -84,7 +97,7 @@ def load_texture(path: str, wrap=GL_REPEAT) -> int:
     else:
         # Fallback procedural se nao encontrar
         if path:
-            print(f"[Aviso] Textura '{path}' nao encontrada. Gerando procedural correspondente.")
+            _warn_fallback(f"Textura '{path}' nao encontrada. Gerando procedural correspondente.")
             basename = os.path.basename(path).lower()
         else:
             basename = ""
@@ -139,14 +152,26 @@ def load_texture_set(material_dir: str, wrap=GL_REPEAT) -> dict:
     material_name = os.path.basename(os.path.dirname(material_dir)).lower()
     if diff_path:
         albedo_id = load_texture(diff_path, wrap=wrap)
-    elif "asphalt" in material_name:
-        albedo_id = create_asphalt_texture(procedural_texture_size())
-    elif "grass" in material_name:
-        albedo_id = create_grass_texture(procedural_texture_size())
     else:
-        albedo_id = create_concrete_texture(procedural_texture_size())
-    normal_id = load_texture(nor_path, wrap=wrap) if nor_path else get_flat_normal_texture()
-    rough_id = load_texture(rough_path, wrap=wrap) if rough_path else get_default_roughness_texture()
+        _warn_fallback(f"Albedo PBR nao encontrado em '{material_dir}'. Gerando procedural.")
+        if "asphalt" in material_name:
+            albedo_id = create_asphalt_texture(procedural_texture_size())
+        elif "grass" in material_name:
+            albedo_id = create_grass_texture(procedural_texture_size())
+        else:
+            albedo_id = create_concrete_texture(procedural_texture_size())
+
+    if nor_path:
+        normal_id = load_texture(nor_path, wrap=wrap)
+    else:
+        _warn_fallback(f"Normal map PBR nao encontrado em '{material_dir}'. Usando normal plano.")
+        normal_id = get_flat_normal_texture()
+
+    if rough_path:
+        rough_id = load_texture(rough_path, wrap=wrap)
+    else:
+        _warn_fallback(f"Roughness map PBR nao encontrado em '{material_dir}'. Usando roughness padrao.")
+        rough_id = get_default_roughness_texture()
 
     res = {
         "albedo": albedo_id,

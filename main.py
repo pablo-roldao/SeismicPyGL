@@ -81,7 +81,8 @@ from OpenGL.GL import (
 
 from src.core import (
     perspective, look_at, ortho, FreeCamera,
-    ShaderProgram, check_gl_error, cleanup_textures, reset_texture_cache
+    ShaderProgram, check_gl_error, cleanup_textures, reset_texture_cache,
+    get_fallback_count
 )
 from src.simulation import EarthquakeSimulator, ParticleSystem
 from src.rendering import ShadowMap, Sky, HUD
@@ -184,6 +185,12 @@ def main():
     hud = HUD(WINDOW_SIZE[0], WINDOW_SIZE[1])
     shadow_map = ShadowMap(size=1024)
     sky = Sky()
+
+    fallback_count = get_fallback_count()
+    if fallback_count > 0:
+        print(f"\033[33m[Aviso]\033[0m {fallback_count} textura(s) usando "
+              f"fallback procedural — veja os avisos acima ou confira "
+              f"assets/textures/pbr/.")
 
     # Luz direcional estável para a depth map: uma única passagem extra por frame.
     light_view = look_at((42.0, 65.0, 36.0), (0.0, 0.0, 0.0))

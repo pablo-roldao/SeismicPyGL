@@ -1,4 +1,4 @@
-"""Geradores procedurais de povoados e cidades (generate_village e generate_city)."""
+"""Gerador procedural de povoado (generate_village)."""
 
 import math
 import random
@@ -76,8 +76,3 @@ def generate_village(center=(0.0, 0.0), building_count=9, house_count=24, block_
             light_poles.append(lp_x)
 
     return buildings, houses, streets, light_poles
-
-
-def generate_city(rows=5, cols=5, spacing=5.5):
-    """Compatibilidade retroativa: gera cidade simples."""
-    return generate_village(center=(0.0, 0.0), building_count=rows * cols)[0]

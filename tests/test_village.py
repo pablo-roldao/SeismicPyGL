@@ -27,11 +27,3 @@ def test_generate_village_produces_streets_and_light_poles():
     )
     assert len(streets) > 0
     assert len(light_poles) > 0
-
-
-def test_generate_city_returns_only_buildings():
-    from src.world.village import generate_city
-    buildings = generate_city(rows=2, cols=2)
-    assert len(buildings) == 4
-    for b in buildings:
-        assert hasattr(b, "resistance")
