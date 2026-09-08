@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from src.simulation.earthquake import EarthquakeSimulator
@@ -102,3 +103,39 @@ def test_collapse_progress_advances_and_clamps():
         b.update(eq, current_time=t, dt=dt, particle_system=None)
 
     assert b.collapse_progress == 1.0
+
+
+def test_spawn_debris_count_in_expected_range():
+    b = make_building(x=0.0, z=0.0, width=4.0, depth=4.0)
+    b._spawn_debris()
+    assert 60 <= len(b.debris) <= 90
+
+
+def test_building_debris_released_after_progress_threshold():
+    from src.world.building import BuildingDebris
+    debris = BuildingDebris(x=0.0, y=5.0, z=0.0, pbr_set={"albedo": 0})
+    assert debris.released is False
+
+    debris.update(dt=0.1, parent_progress=0.10)
+    assert debris.released is False
+
+    debris.update(dt=0.1, parent_progress=0.20)
+    assert debris.released is True
+
+
+def test_building_debris_falls_once_released():
+    from src.world.building import BuildingDebris
+    debris = BuildingDebris(x=0.0, y=5.0, z=0.0, pbr_set={"albedo": 0})
+    debris.released = True
+    debris.vy = 0.0  # ignora o impulso inicial para trás/cima, isola a gravidade
+    y_before = debris.y
+    debris.update(dt=0.1, parent_progress=1.0)
+    assert debris.y < y_before
+    assert debris.vy < 0.0
+
+
+def test_building_debris_instance_data_places_debris_at_position():
+    from src.world.building import BuildingDebris
+    debris = BuildingDebris(x=1.0, y=2.0, z=3.0, size=(0.5, 0.5, 0.5), pbr_set={"albedo": 0})
+    model, color = debris.instance_data()
+    assert np.allclose(model[0:3, 3], (1.0, 2.0, 3.0))
