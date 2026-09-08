@@ -17,8 +17,9 @@ import numpy as np
 from OpenGL.GL import (
     glGenVertexArrays, glBindVertexArray, glDeleteVertexArrays,
     glGenBuffers, glBindBuffer, glBufferData, glDeleteBuffers,
-    glVertexAttribPointer, glEnableVertexAttribArray, glDrawArrays,
-    GL_ARRAY_BUFFER, GL_STATIC_DRAW, GL_FLOAT, GL_FALSE, GL_TRIANGLES,
+    glVertexAttribPointer, glEnableVertexAttribArray, glDrawArrays, glDrawElements,
+    GL_ARRAY_BUFFER, GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW, GL_FLOAT, GL_FALSE,
+    GL_TRIANGLES, GL_UNSIGNED_INT,
 )
 try:
     from .obj_loader import parse_obj, create_cube_mesh, create_plane_mesh, create_quad_mesh, create_cylinder_mesh
@@ -27,11 +28,13 @@ except ImportError:
 
 
 class Mesh:
-    def __init__(self, vertex_data: np.ndarray, vertex_count: int, stride: int = 32):
+    def __init__(self, vertex_data: np.ndarray, vertex_count: int, stride: int = 32, indices: np.ndarray = None):
         self.vertex_count = vertex_count
         self.stride = stride
         self.vao = glGenVertexArrays(1)
         self.vbo = glGenBuffers(1)
+        self.ebo = None
+        self.index_count = 0
 
         glBindVertexArray(self.vao)
         glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
@@ -57,6 +60,15 @@ class Mesh:
             glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, self.stride, ctypes.c_void_p(32))
             glEnableVertexAttribArray(3)
 
+        # O binding do EBO fica gravado no estado do VAO — precisa ser feito
+        # com o VAO ainda vinculado e nunca desvinculado antes dele.
+        if indices is not None:
+            idx_data = np.ascontiguousarray(indices, dtype=np.uint32)
+            self.ebo = glGenBuffers(1)
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo)
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx_data.nbytes, idx_data, GL_STATIC_DRAW)
+            self.index_count = len(idx_data)
+
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glBindVertexArray(0)
 
@@ -72,8 +84,8 @@ class Mesh:
 
     @classmethod
     def create_plane(cls, size=100.0, divisions=50):
-        vdata, count, stride = create_plane_mesh(size, divisions)
-        return cls(vdata, count, stride)
+        vdata, indices, count, stride = create_plane_mesh(size, divisions)
+        return cls(vdata, count, stride, indices=indices)
 
     @classmethod
     def create_quad(cls, size=1.0):
@@ -86,13 +98,19 @@ class Mesh:
         return cls(vdata, count, stride)
 
     def draw(self):
-        """Renderiza a geometria com glDrawArrays."""
+        """Renderiza a geometria com glDrawElements (se houver EBO) ou glDrawArrays."""
         glBindVertexArray(self.vao)
-        glDrawArrays(GL_TRIANGLES, 0, self.vertex_count)
+        if self.ebo is not None:
+            glDrawElements(GL_TRIANGLES, self.index_count, GL_UNSIGNED_INT, ctypes.c_void_p(0))
+        else:
+            glDrawArrays(GL_TRIANGLES, 0, self.vertex_count)
         glBindVertexArray(0)
 
     def cleanup(self):
-        """Libera o VAO e VBO da memória de vídeo."""
+        """Libera o VAO, VBO e EBO (se houver) da memória de vídeo."""
+        if self.ebo is not None:
+            glDeleteBuffers(1, [self.ebo])
+            self.ebo = None
         if self.vbo is not None:
             glDeleteBuffers(1, [self.vbo])
             self.vbo = None

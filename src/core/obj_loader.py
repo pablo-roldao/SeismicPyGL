@@ -207,40 +207,46 @@ def create_cube_mesh(width=1.0, height=1.0, depth=1.0, y_offset=0.0):
 
 def create_plane_mesh(size=100.0, divisions=50):
     """
-    Cria uma grade retangular contínua no plano XZ em Y=0.
-    Gera triângulos triangulados para simulação da onda sísmica.
+    Cria uma grade retangular contínua no plano XZ em Y=0, com vértices
+    compartilhados entre células vizinhas (via EBO) em vez de duplicados por
+    triângulo. O deslocamento da onda sísmica é recalculado em ground.vert a
+    partir da posição do vértice, então compartilhar vértices entre
+    triângulos não afeta a simulação.
+
+    Retorna (vertex_data, indices, vertex_count, stride) — note o
+    `indices` extra em relação aos outros geradores de malha.
     """
     step = size / divisions
     half = size / 2.0
-    verts = []
+    n = divisions + 1  # vértices por lado
 
+    # Normal (0,1,0) e UV crescendo na mesma proporção em X e Z: a tangente
+    # (derivada da posição em relação a U) é constante e igual a (1,0,0) em
+    # toda a grade — mesmo resultado que compute_tangents daria por
+    # triângulo, calculado uma única vez aqui.
+    verts = np.zeros((n * n, 11), dtype=np.float32)
+    for i in range(n):
+        x = -half + i * step
+        u = i / divisions * 10.0  # Tiling da textura
+        for j in range(n):
+            z = -half + j * step
+            v = j / divisions * 10.0
+            verts[i * n + j, 0:8] = (x, 0.0, z, u, v, 0.0, 1.0, 0.0)
+    verts[:, 8:11] = (1.0, 0.0, 0.0)
+
+    indices = np.empty(divisions * divisions * 6, dtype=np.uint32)
+    k = 0
     for i in range(divisions):
         for j in range(divisions):
-            x0 = -half + i * step
-            x1 = x0 + step
-            z0 = -half + j * step
-            z1 = z0 + step
+            i00 = i * n + j
+            i10 = (i + 1) * n + j
+            i11 = (i + 1) * n + (j + 1)
+            i01 = i * n + (j + 1)
+            # Mesma ordem/winding dos dois triângulos por célula do código anterior.
+            indices[k:k + 6] = (i00, i10, i11, i00, i11, i01)
+            k += 6
 
-            u0 = i / divisions * 10.0  # Tiling da textura
-            u1 = (i + 1) / divisions * 10.0
-            v0 = j / divisions * 10.0
-            v1 = (j + 1) / divisions * 10.0
-
-            # Triângulo 1 (x0,z0), (x1,z0), (x1,z1)
-            verts.extend([
-                x0, 0.0, z0,  u0, v0,  0.0, 1.0, 0.0,
-                x1, 0.0, z0,  u1, v0,  0.0, 1.0, 0.0,
-                x1, 0.0, z1,  u1, v1,  0.0, 1.0, 0.0,
-            ])
-            # Triângulo 2 (x0,z0), (x1,z1), (x0,z1)
-            verts.extend([
-                x0, 0.0, z0,  u0, v0,  0.0, 1.0, 0.0,
-                x1, 0.0, z1,  u1, v1,  0.0, 1.0, 0.0,
-                x0, 0.0, z1,  u0, v1,  0.0, 1.0, 0.0,
-            ])
-
-    arr = np.array(verts, dtype=np.float32)
-    return compute_tangents(arr)
+    return verts.flatten(), indices, n * n, 44
 
 
 def create_quad_mesh(size=1.0):
