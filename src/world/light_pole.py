@@ -95,6 +95,11 @@ class LightPole:
             m_pivot = m_pivot @ rotate_x(rx) @ rotate_z(rz)
         elif earthquake and earthquake.active:
             amp = math.hypot(dx, dy, dz)
+            # Aproximação visual, intencionalmente independente da física real
+            # de EarthquakeSimulator/ground.vert: só reusa a amplitude (amp) de
+            # get_offset, com frequência (16.0) e ganho (18.0) próprios. Ajustar
+            # damping/frequency/spatial_falloff em EarthquakeSimulator NÃO muda
+            # este balanço — é preciso editar as constantes abaixo também.
             sway_ang = amp * 18.0 * math.sin(current_time * 16.0 + self.x * 0.5)
             m_pivot = m_pivot @ rotate_x(sway_ang * 0.6) @ rotate_z(sway_ang)
 
