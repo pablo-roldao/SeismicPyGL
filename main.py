@@ -248,7 +248,8 @@ def main():
         else:
             camera.process_mouse(rel_x, rel_y)
             
-        camera.process_keyboard(dt)
+        camera.process_keyboard(dt, buildings=all_buildings, trees=forest,
+                                 mountain=mountain, light_poles=lamp_posts)
         camera.update_trauma(dt)
 
         # Atualização física dos objetos

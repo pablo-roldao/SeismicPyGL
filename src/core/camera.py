@@ -37,6 +37,7 @@ class FreeCamera:
         self.mouse_sensitivity = mouse_sensitivity
         self.eye_height = 2.5
         self.world_bounds = 68.0
+        self.collision_radius = 0.35  # raio aproximado do "corpo" da câmera, para colisão com objetos
 
         self.fov = fov               # campo de visão atual (graus)
         self.zoom_speed = zoom_speed
@@ -131,7 +132,53 @@ class FreeCamera:
         """Vetor de direção normalizado (sem shake) — usado para culling de objetos fora do FOV."""
         return self._base_forward_vector()
 
-    def process_keyboard(self, dt):
+    def _push_out_of_circle(self, cx, cz, ox, oz, radius):
+        """Empurra (cx, cz) para fora de um obstáculo circular em (ox, oz)."""
+        dx, dz = cx - ox, cz - oz
+        dist = math.hypot(dx, dz)
+        min_dist = radius + self.collision_radius
+        if dist >= min_dist:
+            return cx, cz
+        if dist > 1e-6:
+            push = (min_dist - dist) / dist
+            return cx + dx * push, cz + dz * push
+        return cx + min_dist, cz  # câmera exatamente no centro: empurra numa direção arbitrária
+
+    def _push_out_of_rect(self, cx, cz, rx, rz, half_w, half_d):
+        """Empurra (cx, cz) para fora de um obstáculo retangular alinhado aos eixos, centrado em (rx, rz)."""
+        inside_x = (rx - half_w) < cx < (rx + half_w)
+        inside_z = (rz - half_d) < cz < (rz + half_d)
+        if inside_x and inside_z:
+            # Centro da câmera já dentro do retângulo (ex.: passo de movimento
+            # rápido o bastante para pular a borda num único frame) — empurra
+            # pela face mais próxima em vez de deixar presa lá dentro.
+            dist_left = cx - (rx - half_w)
+            dist_right = (rx + half_w) - cx
+            dist_front = cz - (rz - half_d)
+            dist_back = (rz + half_d) - cz
+            nearest = min(dist_left, dist_right, dist_front, dist_back)
+            if nearest == dist_left:
+                return rx - half_w - self.collision_radius, cz
+            if nearest == dist_right:
+                return rx + half_w + self.collision_radius, cz
+            if nearest == dist_front:
+                return cx, rz - half_d - self.collision_radius
+            return cx, rz + half_d + self.collision_radius
+
+        nearest_x = max(rx - half_w, min(cx, rx + half_w))
+        nearest_z = max(rz - half_d, min(cz, rz + half_d))
+        dx, dz = cx - nearest_x, cz - nearest_z
+        dist = math.hypot(dx, dz)
+        if dist >= self.collision_radius:
+            return cx, cz
+        if dist <= 1e-6:
+            return cx, cz + self.collision_radius  # exatamente na borda: empurra numa direção arbitrária
+        push = (self.collision_radius - dist) / dist
+        return cx + dx * push, cz + dz * push
+
+    LIGHT_POLE_COLLISION_RADIUS = 0.2
+
+    def process_keyboard(self, dt, buildings=(), trees=(), mountain=None, light_poles=()):
         """
         W = frente, S = trás, A = esquerda, D = direita.
         (Shift acelera.)
@@ -172,6 +219,18 @@ class FreeCamera:
             move_z /= move_len
             self.x += move_x * step
             self.z += move_z * step
+
+        # Impede que a câmera atravesse objetos sólidos do mundo.
+        for b in buildings:
+            self.x, self.z = self._push_out_of_rect(self.x, self.z, b.x, b.z, b.width * 0.5, b.depth * 0.5)
+        for t in trees:
+            if not t.falling:
+                self.x, self.z = self._push_out_of_circle(self.x, self.z, t.x, t.z, t.trunk_radius)
+        if mountain is not None:
+            self.x, self.z = self._push_out_of_circle(self.x, self.z, mountain.x, mountain.z, mountain.base_radius)
+        for lp in light_poles:
+            if not lp.falling:
+                self.x, self.z = self._push_out_of_circle(self.x, self.z, lp.x, lp.z, self.LIGHT_POLE_COLLISION_RADIUS)
 
         # Mantém a câmera dentro da área do mapa e acima do nível do solo
         self.x = max(-self.world_bounds, min(self.world_bounds, self.x))
