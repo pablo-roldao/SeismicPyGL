@@ -11,7 +11,7 @@ from ..core.mesh import Mesh
 from ..core.shader import ShaderProgram
 from ..core.math_utils import translate, scale, perlin2d
 from ..core.obj_loader import compute_tangents
-from .shared import get_pbr_set, get_shared_cube_mesh
+from .shared import get_pbr_set
 
 
 class RockDebris:
@@ -42,14 +42,10 @@ class RockDebris:
             self.vx *= 0.82
             self.vz *= 0.82
 
-    def draw(self, shader: ShaderProgram):
-        cube_mesh = get_shared_cube_mesh()
-        shader.set_uniform_int("u_use_texture", 0)
-        shader.set_uniform_int("u_use_pbr", 0)
+    def instance_data(self):
+        """Matriz de modelo + cor para o DebrisRenderer instanciado (ver debris_renderer.py)."""
         model = translate(self.x, self.y, self.z) @ scale(self.size, self.size, self.size)
-        shader.set_uniform_mat4("u_model", model)
-        shader.set_uniform_vec4("u_base_color", self.color)
-        cube_mesh.draw()
+        return model, self.color
 
 
 class Mountain:
@@ -150,34 +146,33 @@ class Mountain:
         color = (0.95, 0.96, 0.98, 1.0) if t >= self.snow_start else (0.42, 0.38, 0.34, 1.0)
         self.debris.append(RockDebris(rx, ry, rz, vx, vy, vz, size=random.uniform(0.35, 0.75), color=color))
 
-    def draw(self, shader: ShaderProgram):
-        shader.set_uniform_int("u_use_texture", 1)
-        shader.set_uniform_int("u_use_pbr", 1)
-        shader.set_uniform_int("u_has_damaged_set", 0)
-        shader.set_uniform_float("u_damage_blend", 0.0)
-        shader.set_uniform_float("u_uv_scale", 4.0)
+    def draw(self, shader: ShaderProgram, shadow_pass: bool = False):
+        if not shadow_pass:
+            shader.set_uniform_int("u_use_texture", 1)
+            shader.set_uniform_int("u_use_pbr", 1)
+            shader.set_uniform_int("u_has_damaged_set", 0)
+            shader.set_uniform_float("u_damage_blend", 0.0)
+            shader.set_uniform_float("u_uv_scale", 4.0)
 
-        glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.pbr_set["albedo"])
-        shader.set_uniform_int("u_texture", 0)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, self.pbr_set["albedo"])
+            shader.set_uniform_int("u_texture", 0)
 
-        glActiveTexture(GL_TEXTURE1)
-        glBindTexture(GL_TEXTURE_2D, self.pbr_set["normal"])
-        shader.set_uniform_int("u_normal_map", 1)
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, self.pbr_set["normal"])
+            shader.set_uniform_int("u_normal_map", 1)
 
-        glActiveTexture(GL_TEXTURE2)
-        glBindTexture(GL_TEXTURE_2D, self.pbr_set["roughness"])
-        shader.set_uniform_int("u_roughness_map", 2)
+            glActiveTexture(GL_TEXTURE2)
+            glBindTexture(GL_TEXTURE_2D, self.pbr_set["roughness"])
+            shader.set_uniform_int("u_roughness_map", 2)
 
-        glActiveTexture(GL_TEXTURE0)
+            glActiveTexture(GL_TEXTURE0)
 
         model = translate(self.x, 0.0, self.z)
         shader.set_uniform_mat4("u_model", model)
-        shader.set_uniform_vec4("u_base_color", (0.92, 0.90, 0.88, 1.0))
+        if not shadow_pass:
+            shader.set_uniform_vec4("u_base_color", (0.92, 0.90, 0.88, 1.0))
         self.mesh.draw()
-
-        for rock in self.debris:
-            rock.draw(shader)
 
     def cleanup(self):
         if self.mesh:

@@ -74,7 +74,7 @@ class LightPole:
                         impact_z = self.z + math.sin(rad) * self.height * 0.7
                         particle_system.emit((impact_x, 0.15, impact_z), count=25, spread=0.6, base_speed=1.6)
 
-    def draw(self, shader: ShaderProgram, earthquake=None, current_time=0.0):
+    def draw(self, shader: ShaderProgram, earthquake=None, current_time=0.0, shadow_pass: bool = False):
         cyl_mesh = get_shared_cylinder_mesh()
         cube_mesh = get_shared_cube_mesh()
 
@@ -98,29 +98,31 @@ class LightPole:
             sway_ang = amp * 18.0 * math.sin(current_time * 16.0 + self.x * 0.5)
             m_pivot = m_pivot @ rotate_x(sway_ang * 0.6) @ rotate_z(sway_ang)
 
-        shader.set_uniform_int("u_use_texture", 1)
-        shader.set_uniform_int("u_use_pbr", 1)
-        shader.set_uniform_int("u_has_damaged_set", 0)
-        shader.set_uniform_float("u_damage_blend", 0.0)
-        shader.set_uniform_float("u_uv_scale", 1.0)
+        if not shadow_pass:
+            shader.set_uniform_int("u_use_texture", 1)
+            shader.set_uniform_int("u_use_pbr", 1)
+            shader.set_uniform_int("u_has_damaged_set", 0)
+            shader.set_uniform_float("u_damage_blend", 0.0)
+            shader.set_uniform_float("u_uv_scale", 1.0)
 
-        glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.pbr_set["albedo"])
-        shader.set_uniform_int("u_texture", 0)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, self.pbr_set["albedo"])
+            shader.set_uniform_int("u_texture", 0)
 
-        glActiveTexture(GL_TEXTURE1)
-        glBindTexture(GL_TEXTURE_2D, self.pbr_set["normal"])
-        shader.set_uniform_int("u_normal_map", 1)
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, self.pbr_set["normal"])
+            shader.set_uniform_int("u_normal_map", 1)
 
-        glActiveTexture(GL_TEXTURE2)
-        glBindTexture(GL_TEXTURE_2D, self.pbr_set["roughness"])
-        shader.set_uniform_int("u_roughness_map", 2)
+            glActiveTexture(GL_TEXTURE2)
+            glBindTexture(GL_TEXTURE_2D, self.pbr_set["roughness"])
+            shader.set_uniform_int("u_roughness_map", 2)
 
-        glActiveTexture(GL_TEXTURE0)
+            glActiveTexture(GL_TEXTURE0)
 
         m_pole = m_pivot @ scale(0.065, self.height, 0.065)
         shader.set_uniform_mat4("u_model", m_pole)
-        shader.set_uniform_vec4("u_base_color", (0.85, 0.88, 0.90, 1.0))
+        if not shadow_pass:
+            shader.set_uniform_vec4("u_base_color", (0.85, 0.88, 0.90, 1.0))
         cyl_mesh.draw()
 
         top_y = self.height
@@ -128,20 +130,23 @@ class LightPole:
             abs(self.arm_dx) or 0.065, 0.065, abs(self.arm_dz) or 0.065
         )
         shader.set_uniform_mat4("u_model", m_arm)
-        shader.set_uniform_vec4("u_base_color", (0.80, 0.82, 0.85, 1.0))
+        if not shadow_pass:
+            shader.set_uniform_vec4("u_base_color", (0.80, 0.82, 0.85, 1.0))
         cube_mesh.draw()
 
         m_head = m_pivot @ translate(self.arm_dx, top_y - 0.05, self.arm_dz) @ scale(0.24, 0.12, 0.24)
         shader.set_uniform_mat4("u_model", m_head)
-        shader.set_uniform_vec4("u_base_color", (0.75, 0.78, 0.80, 1.0))
+        if not shadow_pass:
+            shader.set_uniform_vec4("u_base_color", (0.75, 0.78, 0.80, 1.0))
         cube_mesh.draw()
 
-        shader.set_uniform_int("u_use_texture", 0)
-        shader.set_uniform_int("u_use_pbr", 0)
-        bulb_col = (1.0, 0.92, 0.45, 1.0) if self.lamp_lit else (0.12, 0.12, 0.12, 1.0)
         m_bulb = m_pivot @ translate(self.arm_dx, top_y - 0.14, self.arm_dz) @ scale(0.18, 0.06, 0.18)
         shader.set_uniform_mat4("u_model", m_bulb)
-        shader.set_uniform_vec4("u_base_color", bulb_col)
+        if not shadow_pass:
+            shader.set_uniform_int("u_use_texture", 0)
+            shader.set_uniform_int("u_use_pbr", 0)
+            bulb_col = (1.0, 0.92, 0.45, 1.0) if self.lamp_lit else (0.12, 0.12, 0.12, 1.0)
+            shader.set_uniform_vec4("u_base_color", bulb_col)
         cube_mesh.draw()
 
 

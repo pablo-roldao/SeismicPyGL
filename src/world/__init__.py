@@ -12,6 +12,7 @@ from .light_pole import LightPole, LampPost
 from .nature import Tree, generate_forest
 from .mountain import Mountain, RockDebris
 from .village import generate_village, generate_city
+from .debris_renderer import DebrisRenderer
 
 __all__ = [
     "get_pbr_set", "get_shared_cube_mesh", "get_shared_cone_mesh",
@@ -24,4 +25,5 @@ __all__ = [
     "Tree", "generate_forest",
     "Mountain", "RockDebris",
     "generate_village", "generate_city",
+    "DebrisRenderer",
 ]

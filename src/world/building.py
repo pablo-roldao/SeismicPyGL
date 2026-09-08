@@ -126,45 +126,47 @@ class Building:
         for debris in self.debris:
             debris.update(dt, self.collapse_progress)
 
-    def draw(self, shader: ShaderProgram, earthquake, current_time: float):
+    def draw(self, shader: ShaderProgram, earthquake, current_time: float, shadow_pass: bool = False):
         cube_mesh = get_shared_cube_mesh()
-        shader.set_uniform_int("u_building_facade", 1)
-        shader.set_uniform_int("u_is_house", 1 if self.is_house else 0)
-        shader.set_uniform_int("u_is_street", 0)
 
-        damage_ratio = min(1.0, self.damage / max(0.001, self.resistance)) if not self.collapsing else 1.0
-        shader.set_uniform_float("u_damage_blend", damage_ratio)
-        shader.set_uniform_int("u_has_damaged_set", 1)
-        shader.set_uniform_int("u_use_pbr", 1)
-        shader.set_uniform_int("u_use_texture", 1)
-        shader.set_uniform_float("u_uv_scale", 1.0)
+        if not shadow_pass:
+            shader.set_uniform_int("u_building_facade", 1)
+            shader.set_uniform_int("u_is_house", 1 if self.is_house else 0)
+            shader.set_uniform_int("u_is_street", 0)
 
-        glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.intact_set["albedo"])
-        shader.set_uniform_int("u_texture", 0)
+            damage_ratio = min(1.0, self.damage / max(0.001, self.resistance)) if not self.collapsing else 1.0
+            shader.set_uniform_float("u_damage_blend", damage_ratio)
+            shader.set_uniform_int("u_has_damaged_set", 1)
+            shader.set_uniform_int("u_use_pbr", 1)
+            shader.set_uniform_int("u_use_texture", 1)
+            shader.set_uniform_float("u_uv_scale", 1.0)
 
-        glActiveTexture(GL_TEXTURE1)
-        glBindTexture(GL_TEXTURE_2D, self.intact_set["normal"])
-        shader.set_uniform_int("u_normal_map", 1)
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, self.intact_set["albedo"])
+            shader.set_uniform_int("u_texture", 0)
 
-        glActiveTexture(GL_TEXTURE2)
-        glBindTexture(GL_TEXTURE_2D, self.intact_set["roughness"])
-        shader.set_uniform_int("u_roughness_map", 2)
+            glActiveTexture(GL_TEXTURE1)
+            glBindTexture(GL_TEXTURE_2D, self.intact_set["normal"])
+            shader.set_uniform_int("u_normal_map", 1)
 
-        curr_damaged_set = self.collapse_set if self.collapsing else self.damaged_set
-        glActiveTexture(GL_TEXTURE3)
-        glBindTexture(GL_TEXTURE_2D, curr_damaged_set["albedo"])
-        shader.set_uniform_int("u_damaged_texture", 3)
+            glActiveTexture(GL_TEXTURE2)
+            glBindTexture(GL_TEXTURE_2D, self.intact_set["roughness"])
+            shader.set_uniform_int("u_roughness_map", 2)
 
-        glActiveTexture(GL_TEXTURE4)
-        glBindTexture(GL_TEXTURE_2D, curr_damaged_set["normal"])
-        shader.set_uniform_int("u_damaged_normal_map", 4)
+            curr_damaged_set = self.collapse_set if self.collapsing else self.damaged_set
+            glActiveTexture(GL_TEXTURE3)
+            glBindTexture(GL_TEXTURE_2D, curr_damaged_set["albedo"])
+            shader.set_uniform_int("u_damaged_texture", 3)
 
-        glActiveTexture(GL_TEXTURE5)
-        glBindTexture(GL_TEXTURE_2D, curr_damaged_set["roughness"])
-        shader.set_uniform_int("u_damaged_roughness_map", 5)
+            glActiveTexture(GL_TEXTURE4)
+            glBindTexture(GL_TEXTURE_2D, curr_damaged_set["normal"])
+            shader.set_uniform_int("u_damaged_normal_map", 4)
 
-        glActiveTexture(GL_TEXTURE0)
+            glActiveTexture(GL_TEXTURE5)
+            glBindTexture(GL_TEXTURE_2D, curr_damaged_set["roughness"])
+            shader.set_uniform_int("u_damaged_roughness_map", 5)
+
+            glActiveTexture(GL_TEXTURE0)
 
         height_factor = max(0.35, 1.0 - self.collapse_progress * 0.65)
         effective_height = self.height * height_factor
@@ -192,7 +194,8 @@ class Building:
             model = m_trans @ m_rot @ m_scale
 
             shader.set_uniform_mat4("u_model", model)
-            shader.set_uniform_vec4("u_base_color", self.color)
+            if not shadow_pass:
+                shader.set_uniform_vec4("u_base_color", self.color)
             cube_mesh.draw()
 
             if self.is_house and not self.collapsing and i == self.slices - 1:
@@ -205,20 +208,22 @@ class Building:
                 m_roof_rot = rotate_y(roof_rot)
                 model_roof = m_roof_trans @ m_roof_rot @ m_roof_scale
 
-                shader.set_uniform_int("u_building_facade", 0)
+                if not shadow_pass:
+                    shader.set_uniform_int("u_building_facade", 0)
                 shader.set_uniform_mat4("u_model", model_roof)
-                shader.set_uniform_vec4("u_base_color", (0.65, 0.30, 0.22, 1.0))
+                if not shadow_pass:
+                    shader.set_uniform_vec4("u_base_color", (0.65, 0.30, 0.22, 1.0))
                 gable_mesh.draw()
 
                 chimney = translate(self.x, roof_y + self.height * 0.30, self.z) @ rotate_y(self.base_rotation) \
                     @ scale(self.width * 0.08, 0.40, self.depth * 0.08)
                 shader.set_uniform_mat4("u_model", chimney)
-                shader.set_uniform_vec4("u_base_color", (0.24, 0.15, 0.12, 1.0))
+                if not shadow_pass:
+                    shader.set_uniform_vec4("u_base_color", (0.24, 0.15, 0.12, 1.0))
                 cube_mesh.draw()
 
-        shader.set_uniform_int("u_building_facade", 0)
-        for debris in self.debris:
-            debris.draw(shader)
+        if not shadow_pass:
+            shader.set_uniform_int("u_building_facade", 0)
 
 
 def create_house(x, z):
@@ -273,32 +278,8 @@ class BuildingDebris:
             self.spin_x *= 0.75
             self.spin_z *= 0.75
 
-    def draw(self, shader: ShaderProgram):
-        if not self.released:
-            return
-
-        shader.set_uniform_int("u_use_texture", 1)
-        shader.set_uniform_int("u_use_pbr", 1)
-        shader.set_uniform_int("u_has_damaged_set", 0)
-        shader.set_uniform_float("u_damage_blend", 0.0)
-        shader.set_uniform_float("u_uv_scale", 1.0)
-
-        glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.pbr_set["albedo"])
-        shader.set_uniform_int("u_texture", 0)
-
-        glActiveTexture(GL_TEXTURE1)
-        glBindTexture(GL_TEXTURE_2D, self.pbr_set["normal"])
-        shader.set_uniform_int("u_normal_map", 1)
-
-        glActiveTexture(GL_TEXTURE2)
-        glBindTexture(GL_TEXTURE_2D, self.pbr_set["roughness"])
-        shader.set_uniform_int("u_roughness_map", 2)
-
-        glActiveTexture(GL_TEXTURE0)
-
+    def instance_data(self):
+        """Matriz de modelo + cor para o DebrisRenderer instanciado (ver debris_renderer.py)."""
         model = (translate(self.x, self.y, self.z) @ rotate_z(self.rotation_z)
                  @ rotate_x(self.rotation_x) @ scale(*self.size))
-        shader.set_uniform_mat4("u_model", model)
-        shader.set_uniform_vec4("u_base_color", (0.85, 0.85, 0.85, 1.0))
-        get_shared_cube_mesh().draw()
+        return model, (0.85, 0.85, 0.85, 1.0)

@@ -134,6 +134,10 @@ class FreeCamera:
         fz = math.sin(yaw_rad) * math.cos(pitch_rad)
         return fx, fy, fz
 
+    def forward_vector(self):
+        """Vetor de direção normalizado (sem shake) — usado para culling de objetos fora do FOV."""
+        return self._base_forward_vector()
+
     def process_keyboard(self, dt):
         """
         W = frente, S = trás, A = esquerda, D = direita.

@@ -9,11 +9,25 @@ Pipeline programável moderno (GLSL 3.3 Core):
 - HUD 2D ortográfico isolado do Depth Test com Escala Richter e FPS estável a 60 FPS
 """
 
+import math
 import os
+import platform
 import sys
 
-# Força o uso da placa de vídeo dedicada NVIDIA GeForce RTX 2050 via Mesa D3D12/WSL
-if sys.platform.startswith("linux"):
+
+def _running_under_wsl() -> bool:
+    """Detecta WSL de verdade, em vez de assumir que todo Linux é WSL."""
+    if not sys.platform.startswith("linux"):
+        return False
+    if "microsoft" in platform.uname().release.lower():
+        return True
+    return os.path.exists("/proc/sys/fs/binfmt_misc/WSLInterop")
+
+
+# No WSL a GPU dedicada só é acessível via tradução D3D12 do Mesa; em Linux
+# nativo esse hack é desnecessário (e pode até forçar um caminho pior que o
+# driver nativo/GLVND já escolheria sozinho), então só se aplica sob WSL.
+if _running_under_wsl():
     if "GALLIUM_DRIVER" not in os.environ:
         os.environ["GALLIUM_DRIVER"] = "d3d12"
     if "MESA_D3D12_DEFAULT_ADAPTER_NAME" not in os.environ:
@@ -22,6 +36,20 @@ if sys.platform.startswith("linux"):
         os.environ["PYOPENGL_PLATFORM"] = "glx"
     if "/usr/lib/wsl/lib" not in os.environ.get("LD_LIBRARY_PATH", ""):
         os.environ["LD_LIBRARY_PATH"] = "/usr/lib/wsl/lib:" + os.environ.get("LD_LIBRARY_PATH", "")
+elif sys.platform.startswith("linux") and os.environ.get("SEISMICPYGL_FORCE_X11") == "1":
+    # Sob um compositor Wayland (comum em notebooks híbridos com Intel+NVIDIA),
+    # o SDL pode escolher o caminho EGL nativo do Wayland para criar o
+    # contexto OpenGL. Esse caminho não consulta a seleção de GPU do GLVND
+    # (ex.: __GLX_VENDOR_LIBRARY_NAME=nvidia, usada por PRIME render offload),
+    # então a GPU dedicada pode nunca ser realmente usada mesmo estando
+    # disponível — forçar XWayland/GLX faz o SDL respeitar essa seleção.
+    # Não é ativado por padrão: em ao menos um ambiente Wayland testado,
+    # forçar SDL_VIDEODRIVER=x11 quebrou a criação do contexto OpenGL. Use
+    # `SEISMICPYGL_FORCE_X11=1 python main.py` para testar manualmente se a
+    # sua GPU dedicada não está sendo usada (veja a linha "[Hardware 3D] GPU:"
+    # impressa no console ao iniciar).
+    if "SDL_VIDEODRIVER" not in os.environ:
+        os.environ["SDL_VIDEODRIVER"] = "x11"
 
 import pygame
 from pygame.locals import (
@@ -42,7 +70,7 @@ from src.simulation import EarthquakeSimulator, ParticleSystem
 from src.rendering import ShadowMap, Sky, HUD
 from src.world import (
     Ground, generate_village, Mountain, generate_forest,
-    get_concrete_texture, Street
+    get_concrete_texture, Street, DebrisRenderer
 )
 
 # 4K é opcional para não sacrificar 60 FPS em monitores/GPUs menores.
@@ -57,6 +85,22 @@ def init_opengl():
     glEnable(GL_MULTISAMPLE)
     glClearColor(0.62, 0.78, 0.94, 1.0)  # Cor de céu aberto
     check_gl_error("init_opengl")
+
+
+def _in_view(obj_x, obj_z, cam_x, cam_z, forward_x, forward_z, cos_threshold, near_radius=6.0):
+    """
+    Culling barato por ângulo (não é frustum culling completo): descarta
+    objetos claramente fora do campo de visão da câmera para poupar as
+    chamadas OpenGL de desenhá-los. Objetos muito próximos nunca são
+    cortados, para não sumirem se a câmera girar rápido.
+    """
+    dx = obj_x - cam_x
+    dz = obj_z - cam_z
+    dist = math.hypot(dx, dz)
+    if dist < near_radius:
+        return True
+    dot = (dx / dist) * forward_x + (dz / dist) * forward_z
+    return dot > cos_threshold
 
 
 def main():
@@ -117,6 +161,9 @@ def main():
         "assets/shaders/scene.frag"
     )
     particle_system = ParticleSystem(max_particles=6000)
+    # Desenha todos os escombros de prédios/montanha em 1-2 draw calls
+    # instanciados, em vez de um glDrawArrays por pedaço de escombro.
+    debris_renderer = DebrisRenderer(max_instances=4000)
     hud = HUD(WINDOW_SIZE[0], WINDOW_SIZE[1])
     shadow_map = ShadowMap(size=1024)
     sky = Sky()
@@ -199,6 +246,16 @@ def main():
         if not earthquake.active:
             particle_system.emit_ambient((camera.x, camera.y, camera.z), forest, dt)
 
+        # Reúne os escombros vivos deste frame para o desenho instanciado.
+        debris_renderer.collect(all_buildings)
+        debris_renderer.collect_rocks(mountain)
+
+        # Vetor de visão da câmera (para o culling barato de árvores/postes abaixo).
+        fwd_x, _, fwd_z = camera.forward_vector()
+        fwd_len = math.hypot(fwd_x, fwd_z) or 1.0
+        fwd_x, fwd_z = fwd_x / fwd_len, fwd_z / fwd_len
+        cos_threshold = math.cos(math.radians(camera.fov * 0.5 + 30.0))
+
         # -------------------------------------------------------------------
         # Renderização 3D (Pipeline Programável)
         # -------------------------------------------------------------------
@@ -208,16 +265,19 @@ def main():
         proj_matrix = perspective(camera.fov, ASPECT_RATIO, 0.1, 1000.0)
 
         # Passagem de profundidade: objetos estáticos/dinâmicos projetam sombra.
+        # shadow_pass=True pula todo o bind de textura/uniforms PBR, já que o
+        # shader de sombra só lê posição + u_model (fragment shader vazio).
         shadow_map.begin(light_space_matrix)
         for s in streets:
-            s.draw(shadow_map.shader, earthquake, elapsed_time)
+            s.draw(shadow_map.shader, earthquake, elapsed_time, shadow_pass=True)
         for b in all_buildings:
-            b.draw(shadow_map.shader, earthquake, elapsed_time)
-        mountain.draw(shadow_map.shader)
+            b.draw(shadow_map.shader, earthquake, elapsed_time, shadow_pass=True)
+        mountain.draw(shadow_map.shader, shadow_pass=True)
         for tree in forest:
-            tree.draw(shadow_map.shader, earthquake, elapsed_time)
+            tree.draw(shadow_map.shader, earthquake, elapsed_time, shadow_pass=True)
         for lp in lamp_posts:
-            lp.draw(shadow_map.shader, earthquake, elapsed_time)
+            lp.draw(shadow_map.shader, earthquake, elapsed_time, shadow_pass=True)
+        debris_renderer.draw_shadow(light_space_matrix)
         shadow_map.end(*WINDOW_SIZE)
 
         sky.draw(view_matrix, proj_matrix, elapsed_time)
@@ -251,26 +311,34 @@ def main():
             s.draw(scene_shader, earthquake, elapsed_time)
         scene_shader.set_uniform_int("u_is_street", 0)
 
-        # Postes de iluminação pública (PBR metal_plate_02)
+        # Postes de iluminação pública (PBR metal_plate_02) — só os que estão
+        # aproximadamente no campo de visão da câmera.
         for lp in lamp_posts:
-            lp.draw(scene_shader, earthquake, elapsed_time)
+            if _in_view(lp.x, lp.z, camera.x, camera.z, fwd_x, fwd_z, cos_threshold):
+                lp.draw(scene_shader, earthquake, elapsed_time)
 
         # Prédios e Casas (PBR red_brick / damaged_plaster com crossfade para broken_brick_wall / cracked_concrete_02)
         for b in all_buildings:
             b.draw(scene_shader, earthquake, elapsed_time)
 
-        # Montanha e destroços de rocha (PBR rocky_terrain_02)
+        # Montanha (PBR rocky_terrain_02)
         scene_shader.set_uniform_int("u_mountain_stratum", 1)
         mountain.draw(scene_shader)
         scene_shader.set_uniform_int("u_mountain_stratum", 0)
 
         # Floresta / Árvores (tronco procedural + dry_river_pebbles sob raízes caídas)
+        # — mesmo culling por ângulo de visão usado nos postes.
         for tree in forest:
-            tree.draw(scene_shader, earthquake, elapsed_time)
+            if _in_view(tree.x, tree.z, camera.x, camera.z, fwd_x, fwd_z, cos_threshold):
+                tree.draw(scene_shader, earthquake, elapsed_time)
 
         scene_shader.stop()
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, 0)
+
+        # Escombros de prédios/montanha, todos em 1-2 draw calls instanciados.
+        debris_renderer.draw(view_matrix, proj_matrix, light_space_matrix, shadow_map.texture,
+                              (camera.x, camera.y, camera.z))
 
         # 3. Partículas de fumaça e poeira com Billboards e Alpha Blending
         particle_system.draw(view_matrix, proj_matrix)
@@ -298,6 +366,7 @@ def main():
             b.cleanup()
     mountain.cleanup()
     particle_system.cleanup()
+    debris_renderer.cleanup()
     hud.cleanup()
     shadow_map.cleanup()
     sky.cleanup()
