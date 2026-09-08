@@ -68,6 +68,12 @@ O jogo detecta e ativa automaticamente a placa de vídeo dedicada (NVIDIA RTX) n
 python main.py
 ```
 
+### 5. Rodar os testes automatizados
+
+```bash
+pytest tests/ -v
+```
+
 ---
 
 ## 📁 Estrutura do Projeto
