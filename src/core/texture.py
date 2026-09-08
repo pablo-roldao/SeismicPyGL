@@ -264,3 +264,11 @@ def cleanup_textures():
     for tex_id in _loaded_textures:
         glDeleteTextures([tex_id])
     _loaded_textures.clear()
+
+
+def reset_texture_cache():
+    """Invalida os caches de textura após cleanup_textures(), sem deletar de novo na GPU."""
+    global _flat_normal_id, _default_roughness_id
+    _pbr_set_cache.clear()
+    _flat_normal_id = None
+    _default_roughness_id = None

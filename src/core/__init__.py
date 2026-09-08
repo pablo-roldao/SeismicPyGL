@@ -12,7 +12,8 @@ from .obj_loader import (
 )
 from .texture import (
     create_texture_from_image, load_texture, load_texture_set,
-    cleanup_textures, get_flat_normal_texture, get_default_roughness_texture
+    cleanup_textures, get_flat_normal_texture, get_default_roughness_texture,
+    reset_texture_cache
 )
 from .camera import FreeCamera
 
@@ -25,5 +26,6 @@ __all__ = [
     "create_cylinder_mesh", "compute_tangents",
     "create_texture_from_image", "load_texture", "load_texture_set",
     "cleanup_textures", "get_flat_normal_texture", "get_default_roughness_texture",
+    "reset_texture_cache",
     "FreeCamera",
 ]

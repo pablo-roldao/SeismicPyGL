@@ -64,13 +64,13 @@ from OpenGL.GL import (
 
 from src.core import (
     perspective, look_at, ortho, FreeCamera,
-    ShaderProgram, check_gl_error, cleanup_textures
+    ShaderProgram, check_gl_error, cleanup_textures, reset_texture_cache
 )
 from src.simulation import EarthquakeSimulator, ParticleSystem
 from src.rendering import ShadowMap, Sky, HUD
 from src.world import (
     Ground, generate_village, Mountain, generate_forest,
-    get_concrete_texture, Street, DebrisRenderer
+    get_concrete_texture, Street, DebrisRenderer, reset_shared_resources
 )
 
 # 4K é opcional para não sacrificar 60 FPS em monitores/GPUs menores.
@@ -372,6 +372,8 @@ def main():
     sky.cleanup()
     scene_shader.cleanup()
     cleanup_textures()
+    reset_shared_resources()
+    reset_texture_cache()
 
     pygame.quit()
     sys.exit()

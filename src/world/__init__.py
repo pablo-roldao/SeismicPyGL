@@ -3,7 +3,8 @@
 from .shared import (
     get_pbr_set, get_shared_cube_mesh, get_shared_cone_mesh,
     get_shared_cylinder_mesh, get_shared_pyramid_mesh, get_shared_gable_mesh,
-    get_concrete_texture, get_grass_texture, get_asphalt_texture
+    get_concrete_texture, get_grass_texture, get_asphalt_texture,
+    reset_shared_resources
 )
 from .ground import Ground
 from .building import Building, create_house, BuildingDebris
@@ -18,6 +19,7 @@ __all__ = [
     "get_pbr_set", "get_shared_cube_mesh", "get_shared_cone_mesh",
     "get_shared_cylinder_mesh", "get_shared_pyramid_mesh", "get_shared_gable_mesh",
     "get_concrete_texture", "get_grass_texture", "get_asphalt_texture",
+    "reset_shared_resources",
     "Ground",
     "Building", "create_house", "BuildingDebris",
     "Street",

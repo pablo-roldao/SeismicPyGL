@@ -70,6 +70,25 @@ def get_shared_gable_mesh() -> Mesh:
     return _shared_gable_mesh
 
 
+def reset_shared_resources():
+    """Libera os meshes compartilhados na GPU e limpa o cache de materiais PBR."""
+    global _shared_cube_mesh, _shared_cone_mesh, _shared_cylinder_mesh
+    global _shared_pyramid_mesh, _shared_gable_mesh
+
+    for mesh in (_shared_cube_mesh, _shared_cone_mesh, _shared_cylinder_mesh,
+                 _shared_pyramid_mesh, _shared_gable_mesh):
+        if mesh is not None:
+            mesh.cleanup()
+
+    _shared_cube_mesh = None
+    _shared_cone_mesh = None
+    _shared_cylinder_mesh = None
+    _shared_pyramid_mesh = None
+    _shared_gable_mesh = None
+
+    _pbr_materials.clear()
+
+
 def get_concrete_texture() -> int:
     return get_pbr_set("damaged_plaster")["albedo"]
 
